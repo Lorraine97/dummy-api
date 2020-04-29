@@ -1,0 +1,123 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Create EC2 instance and DB server for Dummy API",
+    "Parameters": {
+        "EmailAddress": {
+            "Description": "Email of the person responsible for the deployment",
+            "Type": "String",
+            "Default":"xinru.lu@dtn.com"
+        },
+        "DBInstanceType": {
+            "Description": "RDS instance type for database",
+            "Type": "String",
+            "Default": "db.t2.micro"
+        },
+        "DBAdminUser": {
+            "Description": "DB Cluster administrator user. If DBClusterSnapshotId has been provided, this value will be ignored and the credentials will be the same as those of the snapshot. [Cannot be admin]",
+            "Type": "String",
+            "Default": "dummy",
+            "NoEcho": true
+        },
+        "DBAdminPassword": {
+            "Description": "DB Cluster administrator user. If DBClusterSnapshotId has been provided, this value will be ignored and the credentials will be the same as those of the snapshot. [Must be >= 8 characters]",
+            "Type": "String",
+            "Default": "dummy_pw",
+            "NoEcho": true
+        },
+        "UserName": {
+            "Description": "Owner of this stack",
+            "Type": "String",
+            "Default": "xinru"
+        },
+        "HostedZoneDot": {
+            "Description": "Hosted zone (with a trailing dot) in which DNS entries will be created. Intentionally not using importable value to allow bamboo to act as the source of truth for configuration. This should otherwise map to the private hosted zone import value, however.",
+            "Type": "String",
+            "Default": "ZP68G93027CN0"
+        }
+    },
+    "Resources": {
+        "DBSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable mysql access for all",
+                "VpcId": {
+                    "Fn::ImportValue": "us-east-1-vpcid"
+                },
+                "SecurityGroupIngress": [{
+                   "IpProtocol" : "-1",
+                   "FromPort" : 3306,
+                   "ToPort" : 3306,
+                   "CidrIp" : "0.0.0.0/0"
+                }],
+                "SecurityGroupEgress" : [{
+                    "IpProtocol" : "-1",
+                    "FromPort" : 3306,
+                    "ToPort" : 3306,
+                    "CidrIp" : "0.0.0.0/0"
+                }],
+                "Tags": [
+                    { "Key": "Name", "Value": { "Ref": "AWS::StackName" }},
+                    { "Key": "Client", "Value": "DTN"},
+                    { "Key": "Department", "Value": "DTN Weather" },
+                    { "Key": "Project", "Value": "Dummy DB" },
+                    { "Key": "Environment", "Value": "development" },
+                    { "Key": "Owner", "Value": { "Ref": "EmailAddress" } },
+                    { "Key": "CostCenter", "Value": { "Fn::ImportValue": "weathercostcentertag" } }
+                ]
+            }
+        },
+
+        "MyDBInstance" : {
+            "Type" : "AWS::RDS::DBInstance",
+            "Properties" : {
+                "DBSubnetGroupName" : {
+                    "Fn::ImportValue": { 
+                        "Fn::Sub": "${AWS::Region}-privaterdssubnetgroup"
+                    }
+                },
+                "Port": "3306",
+                "Engine" : "aurora-mysql",
+                "DBInstanceClass" : { "Ref": "DBInstanceType" },
+                "DBParameterGroupName": "default.mysql5.7",
+                "PubliclyAccessible" : false,
+                "DBName": "dummydatabase",
+                "VPCSecurityGroups": [
+                    {
+                        "Ref": "DBSecurityGroup"
+                    }
+                ],
+
+                "Tags": [
+                    { "Key": "Name", "Value": { "Ref": "AWS::StackName" }},
+                    { "Key": "Client", "Value": "DTN"},
+                    { "Key": "Department", "Value": "DTN Weather" },
+                    { "Key": "Project", "Value": "Dummy DB" },
+                    { "Key": "Environment", "Value": "development" },
+                    { "Key": "Owner", "Value": { "Ref": "EmailAddress" } },
+                    { "Key": "CostCenter", "Value": { "Fn::ImportValue": "weathercostcentertag" } }
+                ]
+            }
+        },
+
+        "MyDummyDNS": {
+            "Type": "AWS::Route53::RecordSet",
+            "Properties": {
+                "HostedZoneName": { "Ref": "HostedZoneDot" },
+                "Name": {
+                    "Fn::Sub": "xinru-db-cf.${HostedZoneDot}"
+                },
+                "Type": "CNAME",
+                "ResourceRecords": [
+                    {
+                        "Fn::GetAtt": ["MyDBInstance", "Endpoint.Address"]
+                    }
+                ],
+                "TTL": 300
+            }
+        }
+    },
+    "Outputs": {
+            "Value": { "Ref": "MyDummyDNS" },
+            "Description": "database endpoint as DNS address"
+    }
+}

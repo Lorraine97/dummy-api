@@ -1,0 +1,118 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Xinru's Dummy API in an EC2 instance",
+  "Parameters": {
+    "EmailAddress": {
+      "Description": "The email address of the maintainer.",
+      "Type": "String",
+      "Default": "xinru.lu@dtn.com"
+    },
+    "InstanceType": {
+      "Description": "The instance type to use.",
+      "Type": "String",
+      "Default": "t2.micro"
+    },
+    "AMIType": {
+      "Description": "EC2 instance AMI type",
+      "Type": "String",
+      "Default": "ami-0323c3dd2da7fb37d"
+    }
+  },
+
+  "Resources": {
+
+    "DummyApiRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version" : "2012-10-17",
+          "Statement": [ {
+            "Effect": "Allow",
+            "Principal": {
+              "Service": [ "ec2.amazonaws.com" ]
+            },
+            "Action": [ "sts:AssumeRole" ]
+          } ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "my-policy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [{
+                "Action": [
+                  "cloudwatch:*",
+                  "logs:*",
+                  "cloudformation:*",
+                  "rds-db:*",
+                  "iam:*"
+                ],
+                "Effect": "Allow",
+                "Resource": "*"}]}
+          }]}
+    },
+    "WebServerSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "VpcId": {"Fn::ImportValue": "us-east-1-vpcid"},
+        "GroupDescription": "free access for dummy project",
+        "SecurityGroupIngress": [{
+           "IpProtocol" : "-1",
+           "FromPort" : 80,
+           "ToPort" : 80,
+           "CidrIp" : "0.0.0.0/0"
+        }],
+        "SecurityGroupEgress" : [{
+            "IpProtocol" : "-1",
+            "FromPort" : 443,
+            "ToPort" : 443,
+            "CidrIp" : "0.0.0.0/0"
+        }]
+      }
+    },
+    "MyEC2Instance": {
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "ImageId" : {"Ref" : "AMIType"},
+        "InstanceType" : { "Ref" : "InstanceType" },
+        "KeyName": {"Fn::ImportValue": { "Fn::Sub": "${AWS::Region}-keyname" }},
+        "SecurityGroups" : [ {"Ref" : "WebServerSecurityGroup"} ],
+        "SubnetId" : [
+          {"Fn::ImportValue": "us-east-1-privatesubneta" },
+          {"Fn::ImportValue": "us-east-1-privatesubnetb" },
+          {"Fn::ImportValue": "us-east-1-privatesubnetc" }
+        ],
+        "Tags": [
+          { "Key": "Name", "Value": { "Ref": "AWS::StackName" }},
+          { "Key": "Client", "Value": "DTN"},
+          { "Key": "Department", "Value": "DTN Weather" },
+          { "Key": "Project", "Value": "Dummy API Deployment" },
+          { "Key": "Environment", "Value": "development" },
+          { "Key": "Owner", "Value": { "Ref": "EmailAddress" } },
+          { "Key": "CostCenter", "Value": { "Fn::ImportValue": "weathercostcentertag" } }
+          ]
+        }
+    },
+    "DNSEntry": {
+      "Type": "AWS::Route53::RecordSet",
+      "Properties": {
+        "HostedZoneName": {"Fn::ImportValue": { "Fn::Sub": "${AWS::Region}-privatehostedzonename" }},
+        "Name": {"Fn::Join": ["", ["xinru-dummy.", {"Fn::ImportValue": { "Fn::Sub": "${AWS::Region}-privatehostedzonename" }}]]},
+        "Type": "CNAME",
+        "ResourceRecords": [ { "Fn::GetAtt": [ "MyEC2Instance", "PublicDnsName" ] } ],
+        "TTL": "300"
+      }
+    }
+  },
+  "Outputs": {
+        "DNSName": {
+            "Value": { "Fn::GetAtt": [ "MyEC2Instance", "PublicDnsName" ] },
+            "Description": "Public DNS name for instance."
+        },
+        "IPAddress": {
+            "Value": { "Fn::GetAtt": [ "MyEC2Instance", "PublicIp" ] },
+            "Description": "Public DNS name for instance."
+        }
+    }
+}
